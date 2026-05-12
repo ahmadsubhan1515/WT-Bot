@@ -1,1 +1,36 @@
-
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Warrior Tickets — Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="login-page">
+      <div class="card login-card">
+        <div class="brand">
+          <div class="brand-mark">⚔️</div>
+          <div>
+            <h1>Warrior Tickets</h1>
+            <span>Dashboard access</span>
+          </div>
+        </div>
+        <form method="post" action="/login" autocomplete="off">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required placeholder="Enter dashboard password" />
+          {% if error %}
+          <p class="err">{{ error }}</p>
+          {% endif %}
+          <div class="actions" style="margin-top: 1.25rem">
+            <button type="submit" class="btn btn-primary" style="width: 100%">Unlock dashboard</button>
+          </div>
+        </form>
+        <p class="hint">Session is stored in a secure cookie. Log out from the main dashboard when finished.</p>
+      </div>
+    </div>
+  </body>
+</html>

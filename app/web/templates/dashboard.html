@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Warrior Tickets — Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">⚔️</div>
+          <div>
+            <h1>Warrior Tickets</h1>
+            <span>Single-guild control · Guild ID {{ guild_id }}</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem">
+          <span id="health-pill" class="pill {% if bot_online %}ok{% else %}bad{% endif %}">
+            {% if bot_online %}Bot online{% else %}Bot connecting…{% endif %}
+          </span>
+          <a class="btn btn-ghost" href="/logout">Log out</a>
+        </div>
+      </header>
+
+      <section class="grid-stats">
+        <div class="card">
+          <h2>Open tickets</h2>
+          <div class="num" id="stat-open">{{ stats.open }}</div>
+        </div>
+        <div class="card">
+          <h2>Closed (total)</h2>
+          <div class="num" id="stat-closed">{{ stats.closed_total }}</div>
+        </div>
+        <div class="card">
+          <h2>Closed today</h2>
+          <div class="num" id="stat-today">{{ stats.closed_today }}</div>
+        </div>
+      </section>
+
+      <div class="card panel">
+        <h2>Bot & panel</h2>
+        <p class="hint">Publish the ticket button panel to any text channel. Users click <strong>Create ticket</strong> to open a modal.</p>
+        <div class="row2" style="margin-top: 1rem">
+          <div>
+            <label for="pub-channel">Channel ID (right-click channel → Copy ID)</label>
+            <input type="text" id="pub-channel" placeholder="e.g. 1098765432109876543" />
+          </div>
+          <div style="display: flex; align-items: flex-end">
+            <button type="button" class="btn btn-primary" id="btn-publish">Publish panel</button>
+          </div>
+        </div>
+        <p id="pub-msg" class="hint"></p>
+      </div>
+
+      <div class="card panel">
+        <h2>Core settings</h2>
+        <div class="row2">
+          <div>
+            <label for="ticket_category_id">Ticket category ID</label>
+            <input type="text" id="ticket_category_id" value="{{ gs.ticket_category_id or '' }}" placeholder="Category where new tickets open" />
+          </div>
+          <div>
+            <label for="transcript_channel_id">Transcript / log channel ID</label>
+            <input type="text" id="transcript_channel_id" value="{{ gs.transcript_channel_id or '' }}" />
+          </div>
+        </div>
+        <div style="margin-top: 1rem">
+          <label for="support_role_ids">Support role IDs (comma separated)</label>
+          <input type="text" id="support_role_ids" placeholder="123,456" />
+        </div>
+        <div class="row2" style="margin-top: 1rem">
+          <div>
+            <label for="max_open_per_user">Max open tickets per user</label>
+            <input type="number" id="max_open_per_user" min="1" max="20" value="{{ gs.max_open_per_user }}" />
+          </div>
+          <div>
+            <label for="auto_close_hours">Auto-close after hours (0 = off)</label>
+            <input type="number" id="auto_close_hours" min="0" max="720" value="{{ gs.auto_close_hours }}" />
+          </div>
+        </div>
+        <div style="margin-top: 1rem">
+          <label for="panel_title">Panel title (embed)</label>
+          <input type="text" id="panel_title" value="{{ gs.panel_title | e }}" />
+        </div>
+        <div style="margin-top: 1rem">
+          <label for="panel_description">Panel description</label>
+          <textarea id="panel_description">{{ gs.panel_description | e }}</textarea>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="btn-save-settings">Save settings</button>
+        </div>
+        <p id="settings-msg" class="hint"></p>
+      </div>
+
+      <div class="card panel">
+        <h2>Live tickets</h2>
+        <div class="actions" style="margin-bottom: 1rem">
+          <button type="button" class="btn btn-ghost" data-filter="open">Open</button>
+          <button type="button" class="btn btn-ghost" data-filter="closed">Closed</button>
+          <button type="button" class="btn btn-ghost" data-filter="">All</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Subject</th>
+                <th>Channel</th>
+                <th>Opener</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="ticket-rows"></tbody>
+          </table>
+        </div>
+        <p id="tickets-msg" class="hint"></p>
+      </div>
+    </div>
+
+    <script>
+      document.getElementById("support_role_ids").value = "{{ support_roles_csv | e }}";
+
+      async function api(path, opts = {}) {
+        const r = await fetch(path, {
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+          ...opts,
+        });
+        if (r.status === 401) {
+          window.location = "/login";
+          return null;
+        }
+        return r;
+      }
+
+      async function refreshHealth() {
+        const r = await api("/api/health");
+        if (!r) return;
+        const j = await r.json();
+        const el = document.getElementById("health-pill");
+        el.textContent = j.bot_ready ? "Bot online" : "Bot offline / starting";
+        el.className = "pill " + (j.bot_ready ? "ok" : "bad");
+      }
+
+      async function refreshStats() {
+        const r = await api("/api/stats");
+        if (!r) return;
+        const j = await r.json();
+        document.getElementById("stat-open").textContent = j.open;
+        document.getElementById("stat-closed").textContent = j.closed_total;
+        document.getElementById("stat-today").textContent = j.closed_today;
+      }
+
+      let ticketFilter = "open";
+      async function loadTickets() {
+        const q = ticketFilter === "" ? "" : "?status=" + encodeURIComponent(ticketFilter);
+        const r = await api("/api/tickets" + q);
+        if (!r) return;
+        const rows = await r.json();
+        const tb = document.getElementById("ticket-rows");
+        tb.innerHTML = rows
+          .map(
+            (t) => `
+          <tr>
+            <td>#${t.id}</td>
+            <td>${escapeHtml(t.subject)}</td>
+            <td><code>${t.channel_id}</code></td>
+            <td><code>${t.opener_id}</code></td>
+            <td>${
+              t.status === "open"
+                ? `<button class="btn btn-danger btn-sm-close" data-id="${t.id}">Close</button>`
+                : ""
+            }</td>
+          </tr>`
+          )
+          .join("");
+        tb.querySelectorAll(".btn-sm-close").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            if (!confirm("Close this ticket from the dashboard?")) return;
+            const id = btn.getAttribute("data-id");
+            const cr = await api("/api/tickets/" + id + "/close", { method: "POST" });
+            const msg = document.getElementById("tickets-msg");
+            if (!cr) return;
+            if (!cr.ok) {
+              const err = await cr.json().catch(() => ({}));
+              msg.textContent = err.detail || cr.statusText;
+            } else {
+              msg.textContent = "Ticket closed.";
+              loadTickets();
+              refreshStats();
+            }
+          });
+        });
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      document.getElementById("btn-save-settings").addEventListener("click", async () => {
+        const body = {
+          ticket_category_id: document.getElementById("ticket_category_id").value || null,
+          transcript_channel_id: document.getElementById("transcript_channel_id").value || null,
+          support_role_ids: document.getElementById("support_role_ids").value,
+          panel_title: document.getElementById("panel_title").value,
+          panel_description: document.getElementById("panel_description").value,
+          max_open_per_user: parseInt(document.getElementById("max_open_per_user").value, 10),
+          auto_close_hours: parseInt(document.getElementById("auto_close_hours").value, 10),
+        };
+        const r = await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
+        const msg = document.getElementById("settings-msg");
+        if (!r) return;
+        msg.textContent = r.ok ? "Saved." : (await r.json().catch(() => ({}))).detail || "Error";
+      });
+
+      document.getElementById("btn-publish").addEventListener("click", async () => {
+        const channel_id = document.getElementById("pub-channel").value.trim();
+        const msg = document.getElementById("pub-msg");
+        if (!channel_id) {
+          msg.textContent = "Enter a channel ID.";
+          return;
+        }
+        const r = await api("/api/panel/publish", { method: "POST", body: JSON.stringify({ channel_id }) });
+        if (!r) return;
+        const j = await r.json().catch(() => ({}));
+        msg.textContent = r.ok ? "Panel posted. Message ID " + j.message_id : j.detail || r.statusText;
+      });
+
+      document.querySelectorAll("[data-filter]").forEach((b) => {
+        b.addEventListener("click", () => {
+          ticketFilter = b.getAttribute("data-filter");
+          loadTickets();
+        });
+      });
+
+      setInterval(refreshHealth, 8000);
+      setInterval(refreshStats, 15000);
+      loadTickets();
+    </script>
+  </body>
+</html>
